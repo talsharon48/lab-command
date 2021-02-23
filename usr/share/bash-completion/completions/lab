@@ -8,8 +8,7 @@ _lab_module()
 # advertise a fixed subset of scripts of your choosing.
   # Advertise all grading scripts that start with {lab|demo}- in the
   # course grading-scripts directory:
-  local GRADING_URL="http://content.example.com/courses/${RHT_COURSE}/${RHT_VMTREE%/*}/grading-scripts/"
-  local PROBS=$( curl -s ${GRADING_URL} | sed -n "s/.*href=\"${1##*/}-\([^\"]*\)\".*/\1/p")
+  local PROBS='auth-ldap auth-ldap auth-ldapsync auth-ldapsync auth-review auth-review automation-ansible automation-ansible automation-resources automation-rest automation-rest automation-scripts automation-scripts certificates-app-trust certificates-enterprise-ca certificates-review certificates-review certificates-troubleshoot gitops-deploy gitops-deploy gitops-gitops gitops-gitops gitops-resources gitops-resources gitops-review gitops-review k8s-deploy k8s-deploy k8s-optimize k8s-optimize logging-deploy logging-deploy logging-diagnose logging-diagnose logging-query logging-query logging-review logging-review logging-visualize logging-visualize monitor-alerts monitor-alerts monitor-review monitor-review monitor-storage monitor-storage monitor-troubleshoot operators-cluster operators-cluster operators-install operators-install operators-review operators-review pools-adding-workers pools-creating pools-creating storage-block storage-block storage-file storage-file storage-local storage-local storage-review storage-review template-ansible template-ansible workers-capacity workers-capacity workers-degrade workers-degrade workers-review workers-review'
   # Advertise a subset of grading scripts that start with {lab|demo}-
   # in the course grading-scripts directory:
 # case ${1##*/} in
