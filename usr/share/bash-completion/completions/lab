@@ -35,4 +35,3 @@ _lab_module()
   esac
 }
 complete -F _lab_module lab
-complete -F _lab_module demo
