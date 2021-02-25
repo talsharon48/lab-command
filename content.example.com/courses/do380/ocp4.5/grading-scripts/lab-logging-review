@@ -1,0 +1,160 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-logging-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-logging-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - examine the environment state for objective criteria
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the "Provisioning and Inspecting Cluster Logging" Review Lab
+#
+# CHANGELOG
+#   * Wed Aug 19 Dan Kolepp <dkolepp@redhat.com>
+#   - intial creation; copied lab-storage-review
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='logging-review'
+title='Lab: Provisioning and Inspecting Cluster Logging'
+
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  ocp4_exit_on_failure
+  deploy_ansible
+  pad2 "Checking for workers 4-6 and ensure logging storage"
+  playbook_args="${playbook_dir}/logging-deploy/check_and_configure_workers.yml"
+  if ansible-playbook ${playbook_args}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+  ocp4_exit_on_failure "Nodes worker04-06 need to be available and ready. To setup the additional workers, follow the Guided Exercise: Adding Worker Nodes."
+
+
+  ocp4_print_setup_header
+  print_line " Preparing the student's cluster:"
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  pad2 "Deploy logging applications"
+  playbook="${playbook_dir}/${this}/apache_spoof_apps.yml"
+  playbook_args="-e project=${this}"
+  if ansible-playbook "${playbook}" "${playbook_args}"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+
+
+  ocp4_grab_lab_files no-solution
+
+  ocp4_print_setup_footer
+}
+
+# Candidate for shared function, or ansible?
+function get_resource_count {
+  local res_type=$1
+  local res_namespace=$2
+
+  oc get "$res_type" -n "$res_namespace" -o json  | jq '.items | length'
+}
+
+
+function lab_grade {
+
+  ocp4_print_prereq_header
+  ocp4_login_as_admin
+  deploy_ansible
+
+  ocp4_print_grade_header
+  pad2 "Answer file is a parseable YAML file"
+  playbook="${playbook_dir}/logging-review/check_answers.yml"
+  playbook_args="--skip-tags=question1,question2,question3"
+  if ansible-playbook "$playbook" "${playbook_args}"
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo ansible-playbook "$playbook" "${playbook_args}"
+  fi
+  ocp4_exit_on_failure "The 'answers.yml' can not be parsed as a YAML file.  Please review and make any corrections, and try 'lab ${this} grade' again."
+
+  pad2 "Correct answers for question 1"
+  playbook_args="--tags=question1"
+  if ansible-playbook "$playbook" "${playbook_args}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Correct answers for question 2"
+  playbook_args="--tags=question2"
+  if ansible-playbook "$playbook" "${playbook_args}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Correct answers for question 3"
+  playbook_args="--tags=question3"
+  if ansible-playbook "$playbook" "${playbook_args}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+
+function lab_finish {
+
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

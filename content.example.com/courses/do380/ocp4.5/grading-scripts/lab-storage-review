@@ -1,0 +1,380 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-storage-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-storage-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - examine the environment state for objective criteria
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Wed Jul 29 Michael Phillips <miphilli@redhat.com>
+#   - added the ocp4_login_as_admin function after the ocp4_is_cluster_up function
+#   * Mon Jun 29 Dan Kolepp <dkolepp@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='storage-review'
+title='Lab: Configuring Persistent Storage'
+
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  # For this GE in particular, a default storage class is disabled.
+  # Typically, for other GEs, set this to "true"
+
+  # TODO: Toggle below two lines after default storage class name is changed.
+  ocp4_set_default_storageclass nfs-storage true
+  print_line
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  ocp4_fail_if_project_exists "storage-local"
+  ocp4_exit_on_failure "It looks like you did not clean up after the storage-local lab. To try this exercise again, run 'lab storage-local finish' followed by 'lab ${this} start'."
+
+  ocp4_print_setup_header
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  deploy_ansible
+
+  pad2 "Checking for workers 4-6"
+  playbook_args="${playbook_dir}/storage/check_workers.yml"
+  if ansible-playbook ${playbook_args}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+  ocp4_exit_on_failure "Nodes worker04-06 need to be available and ready. To setup the additional workers, follow the Guided Exercise: Adding Worker Nodes."
+
+  pad2 "Ensure additional workers have the 'infra' node role"
+  if oc label --overwrite node/worker0{4,5,6} node-role.kubernetes.io/infra= && \
+     oc label node/worker0{4,5,6} node-role.kubernetes.io/worker-
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_setup_footer
+}
+
+# Candidate for shared function, or ansible?
+function get_resource_count {
+  local res_type=$1
+  local res_namespace=$2
+
+  oc get "$res_type" -n "$res_namespace" -o json  | jq '.items | length'
+}
+
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+  LOCAL_STORAGE_PROJECT=storage-local
+  DATABASE_PROJECT=${this}
+
+  pad2 "The 'storage-local' project exists"
+  if oc project $LOCAL_STORAGE_PROJECT;
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Operator Group exists in the 'storage-local' project"
+  og_count=$(get_resource_count og $LOCAL_STORAGE_PROJECT)
+  if [ "$og_count" == "1" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Subscription resource exists in the 'storage-local' project"
+  subs_count=$(get_resource_count subs $LOCAL_STORAGE_PROJECT)
+  if [ "$subs_count" == "1" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Cluster Service Version (CSV) exists in the 'storage-local' project"
+  csv_count=$(get_resource_count csv $LOCAL_STORAGE_PROJECT)
+  if [ "$csv_count" == "1" ]
+  then
+    print_PASS
+  else
+    echo "CSV Count: $csv_count"
+    print_FAIL
+  fi
+
+  pad2 "Only one LocalVolume resource exists in 'storage-local' project"
+  lv_count=$(get_resource_count localvolume $LOCAL_STORAGE_PROJECT)
+  if [ "$lv_count" == "1" ]
+  then
+    print_PASS
+    LV_RESOURCE=$(oc get localvolume -o name)
+  else
+    print_FAIL
+    LV_RESOURCE=lv-resource-not-found
+  fi
+
+  sc_desired_name=local-blk
+  pad2 "LocalVolume resource defines only the $sc_desired_name storage class"
+  sc_name=$(oc get "$LV_RESOURCE" \
+             -o jsonpath='{.spec.storageClassDevices[0].storageClassName}')
+  if [ "$sc_name" == "$sc_desired_name" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo "Storage class name is set to: $sc_name"
+  fi
+
+  sc_count_desired=1
+  pad2 "LocalVolume resource only defines one storage class"
+  sc_count_actual=$(oc get "$LV_RESOURCE" -o json | \
+                      jq '.spec.storageClassDevices | length')
+  if [ "$sc_count_actual" == "$sc_count_desired" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo "LocalVolume defines $sc_count_actual storage classes in the .spec.storageClassDevices attribute"
+  fi
+
+  dev_count_desired=1
+  pad2 "LocalVolume resource only lists one additional block device"
+  dev_count_actual=$(oc get "$LV_RESOURCE" -o json | \
+                jq '.spec.storageClassDevices[0].devicePaths | length')
+  if [ "$dev_count_actual" == "$dev_count_desired" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo "LocalVolume defines $dev_count_actual additional devices in the .spec.storageClassDevices[0].devicePaths attribute"
+  fi
+
+  dev_desired=/dev/vdb
+  pad2 "LocalVolume resource only creates PVs from /dev/vdb devices"
+  dev_actual=$(oc get "$LV_RESOURCE" \
+             -o jsonpath='{.spec.storageClassDevices[0].devicePaths[0]}')
+  if [ "$dev_actual" == "$dev_desired" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The $DATABASE_PROJECT project exists"
+  if oc get project ${DATABASE_PROJECT}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+
+  pad2 "A single quota resource exists for the $DATABASE_PROJECT project"
+  quota_count=$(get_resource_count quota $DATABASE_PROJECT)
+  if [ "$quota_count" == "1" ]
+  then
+    print_PASS
+    QUOTA_RESOURCE=$(oc get quota -n "$DATABASE_PROJECT" -o name)
+  else
+    print_FAIL
+    QUOTA_RESOURCE=zzzzzz
+  fi
+
+  pad2 "Storage quota restricts project to one local volume PVC"
+  quota_pvc_count=1
+  quota_pvc_count_actual=$(oc get "$QUOTA_RESOURCE" -n "$DATABASE_PROJECT" -o json | \
+      jq -r '.spec.hard["local-blk.storageclass.storage.k8s.io/persistentvolumeclaims"]' )
+  if [ "$quota_pvc_count_actual" == "$quota_pvc_count" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo "The $QUOTA_RESOURCE has $quota_pvc_count_actual allowed local volume PVCs"
+  fi
+
+  pad2 "Storage quota restricts total storage requests to 10GB"
+  storage_requests_desired="10G\n10Gi"
+  storage_requests_actual=$(oc get "$QUOTA_RESOURCE" -n "$DATABASE_PROJECT" \
+      -o json | jq -r '.spec.hard["requests.storage"]' )
+  if [ -z $storage_requests_actual ]
+  then
+    print_FAIL
+  else
+    if echo -e "$storage_requests_desired" | grep "$storage_requests_actual"
+    then
+      print_PASS
+    else
+      print_FAIL
+      echo "The $QUOTA_RESOURCE has a storage restriction of: $storage_requests_actual ."
+      echo -e "Acceptable values are: $storage_requests_desired"
+    fi
+  fi
+
+  pad2 "Postgres Database is deployed"
+  if echo "\c sampledb" | oc rsh -n $DATABASE_PROJECT postgresql-0 psql
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo "Unable to connect to sampledb database on postgresql-0 pod"
+    echo "Unable to execute: echo \c sampledb | oc rsh postgresql-0 psql"
+  fi
+
+  pad2 "Postgres Database uses 'local-blk' storage"
+  db_sc_name=$(oc get pvc data-postgresql-0 -n "$DATABASE_PROJECT" \
+      -o json | jq -r '.spec.storageClassName' )
+  if [ "$sc_desired_name" == "$db_sc_name" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+    echo "The $QUOTA_RESOURCE has a storage restriction of: $storage_requests_actual"
+  fi
+
+  #pad2 "The 'local-blk' storage class is set as the default"
+  #print_FAIL
+
+  ocp4_print_grade_footer
+}
+
+
+
+function lab_finish {
+
+  local LOCAL_STORAGE_PROJECT=storage-local
+
+  ocp4_print_cleanup_header
+  deploy_ansible
+
+  ocp4_login_as_admin
+  ocp4_set_default_storageclass nfs-storage "true"
+
+  ocp4_delete_project "${this}"
+
+  pad2 "Remove any LocalVolume Resources"
+  if ansible-playbook "${playbook_dir}"/storage/rm_LocalVolumes.yml
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/rm_LocalVolumes.yml
+    ocp4_exit_on_failure "Unable to remove LocalVolume Custom Resources.  Manually remove these, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove the Local Storage Subscription Resource"
+  if ansible-playbook "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=Subscription" \
+      -e "this_namespace=storage-local"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=Subscription" \
+      -e "this_namespace=storage-local"
+    ocp4_exit_on_failure "Unable to remove local storage Subscription.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove Local Storage CSV Resource"
+  if ansible-playbook "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=ClusterServiceVersion"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=ClusterServiceVersion"
+    ocp4_exit_on_failure "Unable to remove local storage CSV.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove any Local Storage PVs"
+  if ansible-playbook "${playbook_dir}"/storage/rm_PVs.yml
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/rm_PVs.yml
+    ocp4_exit_on_failure "Unable to remove local storage PVs.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove the 'local-blk' storage class"
+  if ansible-playbook "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=storage.k8s.io/v1" \
+      -e "this_kind=StorageClass" \
+      -e "this_name_filter=local-blk"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=storage.k8s.io/v1" \
+      -e "this_kind=StorageClass" \
+      -e "this_name_filter=local-blk"
+    ocp4_exit_on_failure "Unable to remove local storage class.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+
+  ocp4_delete_project "$LOCAL_STORAGE_PROJECT"
+  ocp4_cleanup_lab_files
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

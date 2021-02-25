@@ -1,0 +1,133 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-operators-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-operators-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - examine the environment state for objective criteria
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#
+#   * Wed Sep 09 Alejandro Coma <acomabon@redhat.com>
+#   - Finish function remove "storage_operator_timestamp" file
+#   - Changed PASS to SUCCESS in lab finish function
+#   * Mon Ago 03 Iván Chavero <ichavero@chavero.com.mx>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='operators-review'
+title='Lab: Cluster Operators'
+
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+
+  ocp4_print_setup_header
+
+  print_line
+  print_line " Preparing the student's cluster:"
+
+  pad2 "Store the openshift-cluster-storage-operator timestamp"
+  if oc get project openshift-cluster-storage-operator -o jsonpath='{.metadata.creationTimestamp}' > /home/student/storage_operator_timestamp
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_grab_lab_files 'no-solution'
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+  pad2 "The 'lab-openshift-metering' subscription exists"
+  if oc get sub lab-openshift-metering -n openshift-metering -o jsonpath='{.metadata.name}' | grep metering
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Operator Group exists in the 'operators-local' project"
+  chan=$(oc get sub lab-openshift-metering -n openshift-metering -o jsonpath='{.spec.channel}')
+  if [ "$chan" == "4.5" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  oldtimestamp=$(cat /home/student/storage_operator_timestamp)
+  newtimestap=$(oc get project openshift-cluster-storage-operator -o jsonpath='{.metadata.creationTimestamp}')
+  pad2 "openshift-cluster-storage-operator project has new timestamp"
+  if [ "${oldtimestamp}" != "${newtimestap}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+
+  pad2 "Remove the 'openshift-metering' namespace"
+  if oc delete project openshift-metering
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_cleanup_lab_files
+
+  rm /home/student/storage_operator_timestamp
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

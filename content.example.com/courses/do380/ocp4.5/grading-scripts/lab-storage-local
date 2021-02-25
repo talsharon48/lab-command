@@ -1,0 +1,189 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-storage-local - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-storage-local {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Mon Aug 31 Alejandro Coma <acomabon@redhat.com>
+#   - added readiness check for nodes 4-6
+#   * Wed Jul 29 Michael Phillips <miphilli@redhat.com>
+#   - added the ocp4_login_as_admin function after the ocp4_is_cluster_up function
+#   * Tue Jun 23 Dan Kolepp <dkolepp>
+#   - copied script from lab-monitor-alerts
+#   * Tue May 19 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+# shellcheck disable=SC2034
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='storage-local'
+# shellcheck disable=SC2034
+title='Guided Exercise: Installing the Local Storage Operator'
+
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+# shellcheck disable=SC2034
+target='workstation'
+
+# shellcheck disable=SC2034
+run_as_root='true'
+
+# shellcheck disable=SC1091
+source /etc/rht
+
+
+function lab_start {
+
+  ocp4_print_setup_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  deploy_ansible
+
+  pad2 "Checking for workers 4-6"
+  playbook_args="${playbook_dir}/storage/check_workers.yml"
+  if ansible-playbook ${playbook_args}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+  ocp4_exit_on_failure "Nodes worker04-06 need to be available and ready. To setup the additional workers, follow the Guided Exercise: Adding Worker Nodes."
+
+  pad2 "Ensure additional workers have the 'infra' node role"
+  if oc label --overwrite node/worker0{4,5,6} node-role.kubernetes.io/infra= && \
+     oc label node/worker0{4,5,6} node-role.kubernetes.io/worker-
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  deploy_ansible
+
+  ocp4_login_as_admin
+
+  pad2 "Remove any LocalVolume Resources"
+  if ansible-playbook "${playbook_dir}"/storage/rm_LocalVolumes.yml
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/rm_LocalVolumes.yml
+    ocp4_exit_on_failure "Unable to remove LocalVolume Custom Resources.  Manually remove these, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove the Local Storage Subscription Resource"
+  if ansible-playbook "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=Subscription" \
+      -e "this_namespace=${this}"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=Subscription" \
+      -e "this_namespace=${this}"
+    ocp4_exit_on_failure "Unable to remove local storage Subscription.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove Local Storage CSV Resource"
+  if ansible-playbook "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=ClusterServiceVersion"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=operators.coreos.com/v1alpha1" \
+      -e "this_kind=ClusterServiceVersion"
+    ocp4_exit_on_failure "Unable to remove local storage CSV.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove any Local Storage PVs"
+  if ansible-playbook "${playbook_dir}"/storage/rm_PVs.yml
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/rm_PVs.yml
+    ocp4_exit_on_failure "Unable to remove local storage PVs.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  pad2 "Remove the 'local-blk' storage class"
+  if ansible-playbook "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=storage.k8s.io/v1" \
+      -e "this_kind=StorageClass" \
+      -e "this_name_filter=local-blk"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}"/storage/basic_rm_resource_type.yml \
+      -e "this_api=storage.k8s.io/v1" \
+      -e "this_kind=StorageClass" \
+      -e "this_name_filter=local-blk"
+    ocp4_exit_on_failure "Unable to remove local storage class.  Remove manually, and run 'lab ${this} finish' again."
+  fi
+
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+# shellcheck disable=SC1090,SC2154
+source /usr/local/lib/"${function_lib}"
+
+# shellcheck disable=SC1090,SC2154
+source /usr/local/lib/"${platform_lib}"
+
+grading_main_program "$@"

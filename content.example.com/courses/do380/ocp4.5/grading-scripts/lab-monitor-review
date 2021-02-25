@@ -1,0 +1,479 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-monitor-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-monitor-review {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - perform evaluation steps on the system
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Tue Jun 30 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='monitor-review'
+title='Lab: Managing Cluster Monitoring and Metrics'
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+source /etc/rht
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  deploy_ansible
+  local EMAIL_ALIAS="ocp-review"
+  local EMAIL_USER="review"
+
+  pad2 "Configuring 'utility' to accept mail from OCP nodes"
+  if ansible-playbook ${playbook_dir}/monitor/configure-mail.yml -e email_alias=${EMAIL_ALIAS} -e email_user=${EMAIL_USER} --tags start
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}/monitor/configure-mail.yml" "-e email_alias=${EMAIL_ALIAS} -e email_user=${EMAIL_USER} --tags start"
+  fi
+
+  if ! [ -d /tmp/${this} ]
+  then
+    mkdir /tmp/${this}
+  fi
+
+  # Checking Alertmanager configuration
+  if oc get secret/alertmanager-main -n openshift-monitoring
+  then
+    oc extract secret/alertmanager-main -n openshift-monitoring --to=/tmp/${this}/ --confirm
+    if ! diff -iB /tmp/${this}/alertmanager.yaml /home/student/${RHT_COURSE^^}/solutions/${this}/alertmanager.yaml-orig
+    then
+      pad2 "Reverting Alertmanager to the default configuration"
+      if oc create secret generic alertmanager-main --from-file=alertmanager.yaml=/home/student/${RHT_COURSE^^}/solutions/${this}/alertmanager.yaml-orig -n openshift-monitoring -o yaml --dry-run | oc replace -f -
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+      if ssh lab@utility sudo ls -d /home/${EMAIL_USER}/Mail
+      then
+        pad2 "Removing '/home/${EMAIL_USER}/Mail' from 'utility'"
+        if ssh lab@utility sudo rm -rf /home/${EMAIL_USER}/Mail
+        then
+          print_SUCCESS
+        else
+          print_FAIL
+        fi
+      fi
+    fi
+  fi
+
+  # Ensure a test alert exists, so that any configured notifications
+  # are triggered.
+  pad2 "Ensure the test alert exists"
+  playbook="${playbook_dir}/monitor/create_alert.yml"
+  if ansible-playbook "${playbook}" -e k8s_state=present
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+
+  # Remove cm/cluster-monitoring-config -n openshift-monitoring if it exists
+  if oc get cm/cluster-monitoring-config -n openshift-monitoring
+  then
+    pad2 "Removing the 'cluster-monitoring-config' configuration map"
+    if oc delete cm/cluster-monitoring-config -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Identify and Remove Prometheus PVCs
+  for PVC in $(oc get pvc -n openshift-monitoring -o name | grep prometheus)
+  do
+    pad2 "Removing PVC '${PVC}'"
+    if oc delete ${PVC} -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  ocp4_print_setup_footer
+}
+
+function lab_grade {
+
+  ocp4_print_grade_header
+  ocp4_login_as_admin
+  local EMAIL_SMARTHOST="192.168.50.254:25"
+  local EMAIL_FROM="alerts-review@ocp4.example.com"
+  local EMAIL_ALIAS="ocp-review@example.com"
+  local EMAIL_USER="review"
+  local SEVERITY="warning"
+  local REPEAT_INTERVAL="2m"
+  local PROMETHEUS_RETENTION="10d"
+  local PROMETHEUS_STORAGE="25Gi"
+
+  local grading_dir="/tmp/${this}-grade/"
+
+  if ! [ -d ${grading_dir} ]
+  then
+    mkdir ${grading_dir}
+  fi
+
+  print_line " Alertmanager checks"
+  # Check the end result of the Alertmanager configuration by looking on utility
+  # for email messages recieved by ${EMAIL_USER}.
+  # Ideally, it would be nice to have the lab script generate a new warning alert
+  # so that grading could check email for the new alert. Without this, it is
+  # possible that a student could configure Alertmanager correctly, have some
+  # alerts sent, and then revert the Alertmanager configuration.
+  # For class, check both email and the Alertmanager configuration.
+  if oc get secret/alertmanager-main -n openshift-monitoring
+  then
+    oc extract secret/alertmanager-main -n openshift-monitoring --to=${grading_dir}/ --confirm
+    # Check either "smtp_smarthost" or "smarthost" line in config for ${EMAIL_SMARTHOST}
+    pad2 "Alertmanager sends email to server:port '${EMAIL_SMARTHOST}'"
+    if grep -wE 'smtp_smarthost|smarthost' ${grading_dir}/alertmanager.yaml | grep ${EMAIL_SMARTHOST}
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    # Check either "smtp_from" or "from" line in config for ${EMAIL_FROM}
+    pad2 "Alertmanager sends email from '${EMAIL_FROM}'"
+    if grep -wE 'smtp_from|from' ${grading_dir}/alertmanager.yaml | grep ${EMAIL_FROM}
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    # Check "to" line in config for ${EMAIL_ALIAS}
+    pad2 "Alertmanager sends emails to '${EMAIL_ALIAS}'"
+    if grep -w 'to' ${grading_dir}/alertmanager.yaml | grep ${EMAIL_ALIAS}
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    # Check "repeat_interval" line in config for ${REPEAT_INTERVAL}
+    pad2 "Alertmanager repeats alerts at an interval of '${REPEAT_INTERVAL}'"
+    if grep -w 'repeat_interval' ${grading_dir}/alertmanager.yaml | grep ${REPEAT_INTERVAL}
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    # Check "severity" line in config for ${SEVERITY}
+    pad2 "Alertmanager filters alerts with a severity of '${SEVERITY}'"
+    if grep -w 'severity' ${grading_dir}/alertmanager.yaml | grep ${SEVERITY}
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    fatal 9 "Alertmanager configuration cannot be extracted to ${grading_dir}"
+  fi
+
+  local MAIL_AVAILABLE="false"
+  local MAIL_COUNT=0
+  local MAIL_COUNT_LIMIT=30
+  # Check if /var/spool/mail/${EMAIL_USER} has a size greater than 0
+  if ssh root@utility [ -s /var/spool/mail/${EMAIL_USER} ]
+  then
+    MAIL_AVAILABLE="true"
+  else
+    pad2 "Waiting up to 5 minutes for email to be received"
+    while [ ${MAIL_COUNT} -lt ${MAIL_COUNT_LIMIT} ]
+    do
+      if ssh root@utility [ -s /var/spool/mail/${EMAIL_USER} ]
+      then
+        MAIL_AVAILABLE="true"
+        break
+      else
+        sleep 10
+        ((MAIL_COUNT=MAIL_COUNT+1))
+      fi
+    done
+    if [ "${MAIL_AVAILABLE,,}" == "true" ]
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  if [ "${MAIL_AVAILABLE,,}" == "true" ]
+  then
+    if rsync -av root@utility:/var/spool/mail/${EMAIL_USER} ${grading_dir}/
+    then
+      # Check if email is sent from the correct address
+      pad2 "Checking for email received from '${EMAIL_FROM}'"
+      if grep "^From: ${EMAIL_FROM}$" ${grading_dir}/${EMAIL_USER}
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      pad2 "Checking for email sent to '${EMAIL_ALIAS}'"
+      # Check if email is sent to the correct address
+      if grep "^To: ${EMAIL_ALIAS}$" ${grading_dir}/${EMAIL_USER}
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      pad2 "Checking for 'warning' emails"
+      # Check if Subject contains "FIRING" and "${SEVERITY}"
+      if grep "^Subject: \[FIRING" ${grading_dir}/${EMAIL_USER} | grep ${SEVERITY}
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+    fi
+  fi
+
+  print_line
+  print_line " Prometheus checks"
+  # Checking persistent storage for Prometheus
+  # The end result is that the /promotheus mount point on the prometheus pods
+  # uses NFS storage from utility (192.168.50.254). The device used matches the
+  # associated PVC. Additionally, the retention period for Prometheus should be set
+  # to ${PROMETHEUS_RETENTION} and storage requests should match ${PROMETHEUS_STORAGE}.
+
+  pad2 "Configuration map 'cluster-monitoring-config' exists with the 'config.yaml' data key"
+  if oc get cm/cluster-monitoring-config -n openshift-monitoring
+  then
+    if oc extract cm/cluster-monitoring-config -n openshift-monitoring --to ${grading_dir} --confirm
+    then
+      if [ -f ${grading_dir}/config.yaml ]
+      then
+        print_PASS
+        # NOTE: This check might give a false positive if there is more than one
+        # "retention" line in the file.
+        pad2 "Prometheus specifies a retention period of '${PROMETHEUS_RETENTION}'"
+        if grep retention ${grading_dir}/config.yaml | grep -w "${PROMETHEUS_RETENTION}"
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+      else
+        print_FAIL
+      fi
+    fi
+  else
+    print_FAIL
+  fi
+
+  # Check for Prometheus PVCs
+  local PVC_AVAILABE="false"
+  local PVC_COUNT=0
+  local PVC_COUNT_LIMIT=36
+  if [ $(oc get pvc -n openshift-monitoring -o name -l app=prometheus | wc -l) -eq 0 ]
+  then
+    pad2 "Waiting up to 3 minutes for Prometheus PVCs"
+    while [ ${PVC_COUNT} -lt ${PVC_COUNT_LIMIT} ]
+    do
+      if [ $(oc get pvc -n openshift-monitoring -o name -l app=prometheus | wc -l) -gt 0 ]
+      then
+        PVC_AVAILABE="true"
+        break
+      else
+        sleep 5
+        ((PVC_COUNT=PVC_COUNT+1))
+      fi
+    done
+    if [ "${PVC_AVAILABE,,}" == "true" ]
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  else
+    PVC_AVAILABE="true"
+  fi
+
+  if [ "${PVC_AVAILABE,,}" == "true" ]
+  then
+    for PVC in $(oc get pvc -n openshift-monitoring -o name -l app=prometheus)
+    do
+      PVC_NAME="$(oc get ${PVC} -n openshift-monitoring -o jsonpath='{.metadata.name}')"
+      PVC_VOLUME="$(oc get ${PVC} -n openshift-monitoring -o jsonpath='{.spec.volumeName}')"
+      PVC_STORAGE_REQUEST="$(oc get ${PVC} -n openshift-monitoring -o jsonpath='{.spec.resources.requests.storage}')"
+
+      pad2 "PVC '${PVC_NAME}' requests '${PROMETHEUS_STORAGE}' of storage"
+      if [ "${PVC_STORAGE_REQUEST}" == "${PROMETHEUS_STORAGE}" ]
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+      if echo ${PVC} | grep prometheus-k8s-0
+      then
+        pad2 "Pod 'prometheus-k8s-0' uses persistent storage"
+        if oc rsh -n openshift-monitoring -c prometheus prometheus-k8s-0 df -h /prometheus/ | grep "${PVC_NAME}-${PVC_VOLUME}"
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+      elif echo ${PVC} | grep prometheus-k8s-1
+      then
+        pad2 "Pod 'prometheus-k8s-1' uses persistent storage"
+        if oc rsh -n openshift-monitoring -c prometheus prometheus-k8s-1 df -h /prometheus/ | grep "${PVC_NAME}-${PVC_VOLUME}"
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+      fi
+    done
+  fi
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  deploy_ansible
+  ocp4_cleanup_lab_files
+
+  pad2 "Remove temporary Lab files"
+  if ls /tmp/alertmanager.yaml
+  then
+    if rm -f /tmp/alertmanager.yaml
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+      print_line "   Unable to remove temporary file /tmp/alertmanager.yaml"
+    fi
+  else
+    print_SUCCESS
+  fi
+
+  local EMAIL_USER="review"
+
+  if ! [ -d /tmp/${this} ]
+  then
+    mkdir /tmp/${this}
+  fi
+
+  # Checking Alertmanager configuration
+  if oc get secret/alertmanager-main -n openshift-monitoring
+  then
+    oc extract secret/alertmanager-main -n openshift-monitoring --to=/tmp/${this}/ --confirm
+    if ! diff -iB /tmp/${this}/alertmanager.yaml /home/student/${RHT_COURSE^^}/solutions/${this}/alertmanager.yaml-orig
+    then
+      pad2 "Reverting Alertmanager to the default configuration"
+      if oc create secret generic alertmanager-main --from-file=alertmanager.yaml=/home/student/${RHT_COURSE^^}/solutions/${this}/alertmanager.yaml-orig -n openshift-monitoring -o yaml --dry-run | oc replace -f -
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  fi
+
+  # Delete ${EMAIL_USER} from utility
+  if ssh lab@utility grep -w ${EMAIL_USER} /etc/passwd
+  then
+    pad2 "Deleting user '${EMAIL_USER}' from 'utility'"
+    if ssh lab@utility sudo userdel -r ${EMAIL_USER}
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  pad2 "Ensure the test alert is absent"
+  playbook="${playbook_dir}/monitor/create_alert.yml"
+  if ansible-playbook "${playbook}" -e k8s_state=absent
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+
+  # Remove cm/cluster-monitoring-config -n openshift-monitoring if it exists
+  if oc get cm/cluster-monitoring-config -n openshift-monitoring
+  then
+    pad2 "Removing the 'cluster-monitoring-config' configuration map"
+    if oc delete cm/cluster-monitoring-config -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Identify and Remove Prometheus PVCs
+  for PVC in $(oc get pvc -n openshift-monitoring -o name | grep prometheus)
+  do
+    pad2 "Removing PVC '${PVC}'"
+    if oc delete ${PVC} -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

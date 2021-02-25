@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-logging-deploy - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-logging-deploy {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the Deploying Cluster Logging exercise.
+#
+# CHANGELOG
+#   * Wed Jul 29 Michael Phillips <miphilli@redhat.com>
+#   - added the ocp4_login_as_admin function after the ocp4_is_cluster_up function
+#   * Tue June 11 James Mighion <jmighion@redhat.com>
+#   - original code
+
+#########################################################################
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='logging-deploy'
+title='Guided Exercise: Deploying Cluster Logging'
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+source /etc/rht
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+
+  ocp4_print_setup_header
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  deploy_ansible
+
+  pad2 "Checking for workers 4-6 and setting up storage"
+  playbook_args="${playbook_dir}/${this}/check_and_configure_workers.yml"
+  if ansible-playbook ${playbook_args}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+  ocp4_exit_on_failure "Nodes worker04-06 need to be available and ready. To setup the additional workers, follow the Guided Exercise: Adding Worker Nodes."
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+
+  ocp4_cleanup_lab_files
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

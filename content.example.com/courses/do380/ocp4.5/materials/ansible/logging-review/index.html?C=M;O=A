@@ -1,0 +1,22 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <title>Index of /courses/do380/ocp4.5/materials/ansible/logging-review</title>
+ </head>
+ <body>
+<h1>Index of /courses/do380/ocp4.5/materials/ansible/logging-review</h1>
+  <table>
+   <tr><th valign="top"><img src="/icons/blank.gif" alt="[ICO]"></th><th><a href="?C=N;O=A">Name</a></th><th><a href="?C=M;O=D">Last modified</a></th><th><a href="?C=S;O=A">Size</a></th><th><a href="?C=D;O=A">Description</a></th></tr>
+   <tr><th colspan="5"><hr></th></tr>
+<tr><td valign="top"><img src="/icons/back.gif" alt="[PARENTDIR]"></td><td><a href="/courses/do380/ocp4.5/materials/ansible/">Parent Directory</a>       </td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/text.gif" alt="[TXT]"></td><td><a href="apache_spoof_apps.yml">apache_spoof_apps.yml</a>  </td><td align="right">2020-09-16 11:58  </td><td align="right">1.3K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="app.yml.j2">app.yml.j2</a>             </td><td align="right">2020-09-16 11:58  </td><td align="right">795 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/text.gif" alt="[TXT]"></td><td><a href="check_answers.yml">check_answers.yml</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">1.3K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="config1.yml">config1.yml</a>            </td><td align="right">2020-09-16 11:58  </td><td align="right">1.8K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="config2.yml">config2.yml</a>            </td><td align="right">2020-09-16 11:58  </td><td align="right">1.8K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="config3.yml">config3.yml</a>            </td><td align="right">2020-09-16 11:58  </td><td align="right">1.8K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="config4.yml">config4.yml</a>            </td><td align="right">2020-09-16 11:58  </td><td align="right">1.9K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/unknown.gif" alt="[   ]"></td><td><a href="secret.yml.j2">secret.yml.j2</a>          </td><td align="right">2020-09-16 11:58  </td><td align="right">228 </td><td>&nbsp;</td></tr>
+   <tr><th colspan="5"><hr></th></tr>
+</table>
+</body></html>

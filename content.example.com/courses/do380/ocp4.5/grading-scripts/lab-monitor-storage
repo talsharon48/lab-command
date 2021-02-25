@@ -1,0 +1,143 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-monitor-storage - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-monitor-storage {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Thu Jun 18 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='monitor-storage'
+title='Guided Exercise: Configuring Storage for the Cluster Monitoring Stack'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+source /etc/rht
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  print_line
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  ocp4_login_as_admin
+
+  # Remove cm/cluster-monitoring-config -n openshift-monitoring if it exists
+  if oc get cm/cluster-monitoring-config -n openshift-monitoring
+  then
+    pad2 "Removing the 'cluster-monitoring-config' configuration map"
+    if oc delete cm/cluster-monitoring-config -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Identify and Remove Prometheus PVCs
+  for PVC in $(oc get pvc -n openshift-monitoring -o name | grep prometheus)
+  do
+    pad2 "Removing PVC '${PVC}'"
+    if oc delete ${PVC} -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  # Identify and Remove Alertmanager PVCs
+  for PVC in $(oc get pvc -n openshift-monitoring -o name | grep alertmanager)
+  do
+    pad2 "Removing PVC '${PVC}'"
+    if oc delete ${PVC} -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_cleanup_lab_files
+
+  # Remove cm/cluster-monitoring-config -n openshift-monitoring if it exists
+  if oc get cm/cluster-monitoring-config -n openshift-monitoring
+  then
+    pad2 "Removing the 'cluster-monitoring-config' configuration map"
+    if oc delete cm/cluster-monitoring-config -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Identify and Remove Prometheus PVCs
+  for PVC in $(oc get pvc -n openshift-monitoring -o name | grep prometheus)
+  do
+    pad2 "Removing PVC '${PVC}'"
+    if oc delete ${PVC} -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  # Identify and Remove Alertmanager PVCs
+  for PVC in $(oc get pvc -n openshift-monitoring -o name | grep alertmanager)
+  do
+    pad2 "Removing PVC '${PVC}'"
+    if oc delete ${PVC} -n openshift-monitoring
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

@@ -1,0 +1,99 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-workers-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-workers-review {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - examine the environment state for objective criteria
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the Profiling Degraded Worker Nodes
+#
+# CHANGELOG
+#   * Mon Aug 3 Christopher Caillouet <ccaillou@redhat.com>
+#   - Adding workers chapter review scripts
+#   * Tue Aug 4 Christopher Caillouet <ccaillou@redhat.com>
+#   - Adding grade function
+#
+# Han shot first.
+
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='workers-review'
+title='Lab: Recovering Failed Worker Nodes'
+
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+
+  print_line
+  ocp4_print_setup_header
+
+  print_line
+  print_line " Degrading worker node (Please wait for 2 Minutes to finish degrading)"
+
+  ocp4_stop_kubelet_service
+
+  ocp4_login_as_kubeadmin
+
+  ocp4_print_setup_footer
+}
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  pad2 "Verify all worker node functionality is properly restored"
+  status=$(ssh core@worker02 "sudo systemctl is-active kubelet")
+  if [ $status == active ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+
+  ocp4_start_kubelet_service
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

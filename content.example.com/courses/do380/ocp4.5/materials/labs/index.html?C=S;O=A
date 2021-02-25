@@ -1,0 +1,44 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+ <head>
+  <title>Index of /courses/do380/ocp4.5/materials/labs</title>
+ </head>
+ <body>
+<h1>Index of /courses/do380/ocp4.5/materials/labs</h1>
+  <table>
+   <tr><th valign="top"><img src="/icons/blank.gif" alt="[ICO]"></th><th><a href="?C=N;O=A">Name</a></th><th><a href="?C=M;O=A">Last modified</a></th><th><a href="?C=S;O=D">Size</a></th><th><a href="?C=D;O=A">Description</a></th></tr>
+   <tr><th colspan="5"><hr></th></tr>
+<tr><td valign="top"><img src="/icons/back.gif" alt="[PARENTDIR]"></td><td><a href="/courses/do380/ocp4.5/materials/">Parent Directory</a>       </td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-alerts.tgz">monitor-alerts.tgz</a>     </td><td align="right">2020-09-16 11:58  </td><td align="right">295 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="k8s-optimize.tgz">k8s-optimize.tgz</a>       </td><td align="right">2020-09-16 11:58  </td><td align="right">299 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-storage.tgz">monitor-storage.tgz</a>    </td><td align="right">2020-09-16 11:58  </td><td align="right">321 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="operators-review.tgz">operators-review.tgz</a>   </td><td align="right">2020-09-16 11:58  </td><td align="right">390 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="logging-diagnose.tgz">logging-diagnose.tgz</a>   </td><td align="right">2020-09-16 11:58  </td><td align="right">391 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="workers-capacity.tgz">workers-capacity.tgz</a>   </td><td align="right">2020-09-16 11:58  </td><td align="right">415 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="logging-review.tgz">logging-review.tgz</a>     </td><td align="right">2020-09-16 11:58  </td><td align="right">417 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="auth-ldap.tgz">auth-ldap.tgz</a>          </td><td align="right">2020-09-16 11:58  </td><td align="right">419 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="certificates-review.tgz">certificates-review.tgz</a></td><td align="right">2020-09-16 11:58  </td><td align="right">482 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="certificates-enterprise-ca.tgz">certificates-enterpr..&gt;</a></td><td align="right">2020-09-16 11:58  </td><td align="right">490 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-review.tgz">monitor-review.tgz</a>     </td><td align="right">2020-09-16 11:58  </td><td align="right">544 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="pools-creating.tgz">pools-creating.tgz</a>     </td><td align="right">2020-09-16 11:58  </td><td align="right">549 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="automation-ansible.tgz">automation-ansible.tgz</a> </td><td align="right">2020-09-16 11:58  </td><td align="right">570 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="automation-resources.tgz">automation-resources..&gt;</a></td><td align="right">2020-09-16 11:58  </td><td align="right">570 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="monitor-troubleshoot.tgz">monitor-troubleshoot..&gt;</a></td><td align="right">2020-09-16 11:58  </td><td align="right">672 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="automation-scripts.tgz">automation-scripts.tgz</a> </td><td align="right">2020-09-16 11:58  </td><td align="right">778 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="gitops-resources.tgz">gitops-resources.tgz</a>   </td><td align="right">2020-09-16 11:58  </td><td align="right">819 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="k8s-deploy.tgz">k8s-deploy.tgz</a>         </td><td align="right">2020-09-16 11:58  </td><td align="right">856 </td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="storage-local.tgz">storage-local.tgz</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">1.0K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="auth-ldapsync.tgz">auth-ldapsync.tgz</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">1.0K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="auth-review.tgz">auth-review.tgz</a>        </td><td align="right">2020-09-16 11:58  </td><td align="right">1.0K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="storage-review.tgz">storage-review.tgz</a>     </td><td align="right">2020-09-16 11:58  </td><td align="right">1.0K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="pools-adding-workers.tgz">pools-adding-workers..&gt;</a></td><td align="right">2020-09-16 11:58  </td><td align="right">1.2K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="gitops-gitops.tgz">gitops-gitops.tgz</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">1.5K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="certificates-troubleshoot.tgz">certificates-trouble..&gt;</a></td><td align="right">2020-09-16 11:58  </td><td align="right">1.7K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="gitops-review.tgz">gitops-review.tgz</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">1.7K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="gitops-deploy.tgz">gitops-deploy.tgz</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">1.7K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="logging-deploy.tgz">logging-deploy.tgz</a>     </td><td align="right">2020-09-16 11:58  </td><td align="right">1.8K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="storage-block.tgz">storage-block.tgz</a>      </td><td align="right">2020-09-16 11:58  </td><td align="right">6.0K</td><td>&nbsp;</td></tr>
+<tr><td valign="top"><img src="/icons/compressed.gif" alt="[   ]"></td><td><a href="storage-file.tgz">storage-file.tgz</a>       </td><td align="right">2020-09-16 11:58  </td><td align="right">4.0M</td><td>&nbsp;</td></tr>
+   <tr><th colspan="5"><hr></th></tr>
+</table>
+</body></html>

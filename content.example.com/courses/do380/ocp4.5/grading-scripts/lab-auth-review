@@ -1,0 +1,246 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-auth-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-auth-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - perform evaluation steps on the system
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for:
+#     Lab: Configuring OpenShift Enterprise Authentication
+#
+# CHANGELOG
+#   * Thu Jul 2nd Alex Corcoles <alexcorcoles@redhat.com>
+#   - initial creation
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='auth-review'
+title='Lab: Configuring OpenShift Enterprise Authentication'
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+
+  ocp4_print_setup_header
+
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  print_line
+  print_line " Preparing the student's cluster:"
+
+  ocp4_grab_lab_files
+
+  ocp4_reset_ldap_sync
+  ocp4_delete_project "${this}"
+  ocp4_reset_ldap_auth
+
+  deploy_ansible
+
+  pad2 "Setting up IdM"
+  if ansible-playbook ${playbook_dir}/auth/idm-setup.yml -e idm_state=present
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_setup_footer
+}
+
+function get_resource_count {
+  local res_type=$1
+  local res_namespace=$2
+
+  oc get "$res_type" -n "$res_namespace" -o json  | jq '.items | length'
+}
+
+function lab_grade {
+  ocp4_login_as_admin
+  ocp4_print_grade_header
+
+  pad2 "The ldap-secret secret in the openshift-config namespace exists"
+  if oc get -n openshift-config secret/ldap-secret
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ldap-secret secret in the openshift-config namespace contains Redhat123@?! in the bindPassword key"
+  if oc extract -n openshift-config secret/ldap-secret --to - --keys bindPassword | grep -e '^Redhat123@\?\!$'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ca-config-map Configmap in the openshift-config namespace exists"
+  if oc get configmap -n openshift-config ca-config-map
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ca-config-map ConfigMap in the openshift-config namespace contains the IdM certificate in the ca.crt key"
+  if diff -w <(curl http://idm.ocp4.example.com/ipa/config/ca.crt) <(oc extract -n openshift-config configmap/ca-config-map --keys ca.crt --to -)
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "An identity provider of type LDAP is defined"
+  if oc get oauth cluster -o jsonpath='{.spec.identityProviders[?(.type=="LDAP")]}' | grep LDAP
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The openshift-admin user can log in"
+  if oc login --kubeconfig=/dev/null -u openshift-admin -p openshift-admin https://api.ocp4.example.com:6443 --insecure-skip-tls-verify=true
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ${this} project exists"
+  if oc get project ${this}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ldap-group-syncer ClusterRole exists"
+  if oc get clusterrole ldap-group-syncer
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ldap-group-syncer ServiceAccount exists"
+  if oc get sa -n ${this} ldap-group-syncer
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "A ClusterRoleBinding for the ldap-group-syncer ClusterRole to the ldap-group-syncer ServiceAccount exists"
+  if oc get clusterrolebinding -o json | jq -e -r '.items[] | select(.roleRef == {kind: "ClusterRole", name: "ldap-group-syncer", apiGroup: "rbac.authorization.k8s.io"} and .subjects == [{kind: "ServiceAccount", name: "ldap-group-syncer", namespace: "auth-review"}])'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The ldap-secret Secret exists in the ${this} project"
+  if oc get secret -n ${this} ldap-secret
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+
+  pad2 "The ldap-secret Secret in the ${this} project contains Redhat123@?! in the bindPassword key"
+  if oc extract -n ${this} secret/ldap-secret --to - --keys bindPassword | grep -e '^Redhat123@\?\!$'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "A ConfigMap exists in the ${this} project"
+  cm_count=$(get_resource_count configmap ${this})
+  if [ "$cm_count" == "1" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "A CronJob exists in the ${this} project"
+  cj_count=$(get_resource_count cronjob ${this})
+  if [ "$cj_count" == "1" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "The openshift-admins Group exists"
+  if oc get group openshift-admins
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "A ClusterRoleBinding for the cluster-admin ClusterRole to the openshift-admins Group exists"
+  if oc get clusterrolebinding -o json | jq -e -r '.items[] | select(.roleRef == {kind: "ClusterRole", name: "cluster-admin", apiGroup: "rbac.authorization.k8s.io"} and .subjects == [{apiGroup: "rbac.authorization.k8s.io", kind: "Group", name: "openshift-admins"}])'
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+
+  ocp4_login_as_kubeadmin
+
+  ocp4_reset_ldap_sync
+  ocp4_delete_project "${this}"
+  ocp4_reset_ldap_auth
+
+  pad2 "Tearing down IdM"
+  if ansible-playbook ${playbook_dir}/auth/idm-setup.yml -e idm_state=absent
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

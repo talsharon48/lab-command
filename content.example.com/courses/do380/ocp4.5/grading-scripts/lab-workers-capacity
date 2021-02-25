@@ -1,0 +1,99 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-workers-capacity - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-workers-capacity {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the Profiling Degraded Worker Nodes
+#
+# CHANGELOG
+#   * Wed Jul 29 Michael Phillips <miphilli@redhat.com>
+#   - added the ocp4_login_as_admin function after the ocp4_is_cluster_up function
+#   * Tue Jul 15 Harpal Singh <harpasin@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='workers-capacity'
+project='workers-capacity'
+title='Guided Exercise: Troubleshooting Worker Node Capacity Issues'
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  deploy_ansible
+  print_line
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+
+  #TODO: Incorporate into the SHLIB
+  pad2 "Check for additional worker nodes"
+  playbook_args="${playbook_dir}/storage/check_workers.yml"
+  if ansible-playbook ${playbook_args}
+  then
+    print_SUCCESS
+
+    # The extra worker nodes are present; ensure correct labels.
+    pad2 "Ensure additional workers have the 'infra' node role"
+    if oc label --overwrite node/worker0{4,5,6} node-role.kubernetes.io/infra= && \
+      oc label node/worker0{4,5,6} node-role.kubernetes.io/worker-
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  else
+    #If extra workers are not present, do not ensure worker configuration.
+    print_SUCCESS
+  fi
+
+  print_line
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_kubeadmin
+  ocp4_cleanup_lab_files
+
+  ocp4_delete_project "${project}"
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

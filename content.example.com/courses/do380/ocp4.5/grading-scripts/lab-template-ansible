@@ -1,0 +1,141 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-TEMPLATE - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-TEMPLATE {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - perform evaluation steps on the system
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Tue May 19 Your Name <yname@redhat.com>
+#   - original code
+
+#########################################################################
+#########################################################################
+#                   How to use this template:
+#
+# 1. Rename the file to lab-<something_related_to_your_lab>
+# 2. Adjust the comments above
+# 3. Modify the two functions, lab_setup and lab_grade to perform the
+#    steps you desire. All work is performed on workstation, so ssh and
+#    scp must be used to perform grading steps on remote host to be graded
+# 4. Remove these "How to use this template" comments
+# 5. If you need to retrieve some values from the cluster, look at
+#    http://sferich888.blogspot.com.br/2017/01/learning-using-jsonpath-with-openshift.html
+#########################################################################
+#########################################################################
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='SCRIPT-NAME'
+title='Guided Exercise: EXERCISE NAME'
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+source /etc/rht
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  ocp4_print_setup_header
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  deploy_ansible
+
+  ## START of two examples that incorporate Ansible Playbooks
+  # Running a playbook without passing variables
+  pad2 "Creating Classroom CA Certificate"
+  if ansible-playbook ${playbook_dir}/certs/classroom-ca.yml
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    #show_ansible "${playbook_dir}/certs/classroom-ca.yml"
+  fi
+
+  # Running a playbook with passing variables
+  pad2 "Creating Wildcard Certificate"
+  if ansible-playbook ${playbook_dir}/certs/wildcard.yml -e cert_path=/home/student/${RHT_COURSE^^}/labs/${this}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    #show_ansible "${playbook_dir}/certs/wildcard.yml" "-e cert_path=/home/student/${RHT_COURSE^^}/labs/${this}"
+  fi
+  ## End Ansible Playbook examples
+
+  ocp4_print_setup_footer
+}
+
+function lab_grade {
+
+  ocp4_print_grade_header
+  ocp4_login_as_admin
+
+  # Put in the steps to grade the lab (use print_PASS or print_FAIL)
+  pad2 'Required file exists'
+  cmd1='[[ -f example.txt ]]'
+  if ${ssh} ${target} "${cmd1}" &> /dev/null
+  then
+    print_PASS
+    pad2 'File contents include required string'
+    cmd1="grep -q 'Red Hat' example.txt"
+    if ${ssh} ${target} "${cmd1}" &> /dev/null
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+
+  ocp4_delete_project "${this}"
+
+  ocp4_cleanup_lab_files
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

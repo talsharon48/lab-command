@@ -1,0 +1,479 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-gitops-review - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-gitops-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - perform evaluation steps on the system
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     "Implementing GitOps with Jenkins"
+#
+# CHANGELOG
+#   * Mon Aug 10 Fernando Lozano <flozano@redhat.com>
+#   - initial code
+
+#########################################################################
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='gitops-review'
+title='Lab: Implementing GitOps with Jenkins'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's workstation:"
+  ocp4_grab_lab_files
+  deploy_ansible
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_restore_oauth
+  do380_samples_co_defaults
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+
+  # not very precise check that the jenkins sa is a cluster administrator
+  local flag=$( oc policy who-can create oauth -A -o jsonpath="{.users[?(@=='system:serviceaccount:${this}:jenkins')]}" )
+  if [ -n "${flag}" ]
+  then
+    pad2 "Revoking cluster administrator rights from Jenkins"
+    if oc adm policy remove-cluster-role-from-user cluster-admin -z jenkins -n "${this}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  ocp4_delete_project "${this}"
+
+  ocp4_restore_oauth
+  do380_samples_co_defaults
+
+  local token='/home/student/jenkins-api-token.txt'
+  if [ -r "${token}" ]
+  then
+    pad2 "Removing the Jenkins API token at '${token}'"
+    if rm "${token}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  local gitrepo="/home/student/${this}"
+  if [ -d "${gitrepo}" ]
+  then
+    pad2 "Removing the Git repository clone at '${gitrepo}'"
+    if rm -rf "${gitrepo}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  ocp4_cleanup_lab_files
+  ocp4_print_cleanup_footer
+}
+
+
+function lab_grade {
+
+  ocp4_login_as_admin
+  ocp4_print_grade_header
+
+  #XXX Actually running the playbook might make the grading script too long (time-wise)
+  print_line 'Verifying your playbook:'
+
+  local playbook="deploy-jenkins.yaml"
+  pad2 "File '${labs}/${this}/${playbook}' exists"
+  if [ -r "${labs}/${this}/${playbook}" ]
+  then
+    print_PASS
+
+    pad2 "There is no 'FIX-ME' marker in the playbook and its resource files"
+    if ! grep -q 'FIX-ME' "${labs}/${this}/${playbook}" "${labs}/${this}/resources"/*
+    then
+      print_PASS
+
+      cd "${labs}/${this}"
+      pad2 "Ansible playbook syntax check"
+      #XXX --check is of no use to our playbook because of register variables :-(
+      if ansible-playbook --syntax-check "${playbook}"
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+    else
+      print_FAIL
+    fi
+
+  else
+    print_FAIL
+  fi
+
+  print_line
+  print_line 'Verifying your Jenkins deployment:'
+
+  local host=""
+  pad2 "Project '${this}' exists"
+  if oc project "${this}"
+  then
+    print_PASS
+
+    local app="jenkins"
+    pad2 "Deployment '${app}' is available"
+    if oc rollout status dc/"${app}" --timeout 1s
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    pad2 "PVC '${app}' exists"
+    if oc get pvc "${app}" -o name
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    pad2 "SA '${app}' is a cluster administrator"
+    if oc policy who-can get node | grep -q "system:serviceaccount:${this}:${app}"
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    pad2 "Route '${app}' exists"
+    if oc get route "${app}" -o name
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    host=$( oc get route "${app}" -o jsonpath='{.spec.host}' )
+    pad2 "Jenkins is available at '${host}'"
+    if curl -sk "https://${host}" | grep -q hudson
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+  else
+    print_FAIL
+  fi
+
+  print_line
+  print_line 'Verifying your Kustomize settings:'
+
+  local gitclone="/home/student/${this}"
+  local kustom='kustomization.yaml'
+  pad2 "Folder '${gitclone}/samples' contains a '${kustom}' file"
+  if [ -r "${gitclone}/samples/${kustom}" ]
+  then
+    print_PASS
+
+    local resources=""
+    cd "${gitclone}"
+    pad2 "Kustomize processes the 'samples' folder"
+    if resources="$( oc kustomize samples )"
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+    pad2 "Kustomize generates a Samples operator configuration"
+    local api=$( echo "${resources}" | yq r - 'apiVersion' )
+    local kind=$( echo "${resources}" | yq r - 'kind' )
+    local name=$( echo "${resources}" | yq r - 'metadata.name' )
+    if [ "${api}" = 'samples.operator.openshift.io/v1' -a "${kind}" = 'Config' -a "${name}" = 'cluster' ]
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+  else
+    print_FAIL
+  fi
+
+  print_line
+  print_line 'Verifying your Apply pipeline:'
+
+  local jenkinsfile='Jenkinsfile-apply'
+  cd "${gitclone}"
+  pad2 "File '${gitclone}/${jenkinsfile}' exists"
+  if [ -r "./${jenkinsfile}" ]
+  then
+    print_PASS
+
+    pad2 "There is no 'FIX-ME' marker in the Jenkinsfile"
+    if ! grep -q 'FIX-ME' "./${jenkinsfile}"
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+
+  else
+    print_FAIL
+  fi
+
+  print_line
+  print_line 'Verifying your GitHub repo:'
+
+  local giturl=""
+  pad2 "Folder '${gitclone}' exists"
+  if [ -d "${gitclone}" ]
+  then
+    print_PASS
+
+    cd "${gitclone}"
+    pad2 "Folder '${gitclone}' is a Git repository"
+    if [ -d ".git" ]
+    then
+      print_PASS
+
+      giturl=$( git config --get remote.origin.url )
+      pad2 "Folder '${gitclone}' is a clone of a GitHub repository"
+      if echo "${giturl}" | grep -q 'https://github.com'
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      pad2 "Repository contains file '${jenkinsfile}'"
+      if [ -r "${jenkinsfile}" ]
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      local folder='samples'
+      pad2 "Repository contains folder '${folder}'"
+      if [ -d "${folder}" ]
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      local folder='delete'
+      pad2 "Repository contains folder '${folder}'"
+      if [ -d "${folder}" ]
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      pad2 "All files in the repository are commited"
+      if [ -z "$( git status --porcelain )" ]
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+      pad2 "All commits in the repository are pushed"
+      local log
+      if log=$( git log origin/master..HEAD ) && test -z "${log}"
+      then
+        print_PASS
+      else
+        print_FAIL
+      fi
+
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  print_line
+  print_line 'Firing your Apply pipeline:'
+
+  #XXX a Jenkins web hook only fires a buid if there were new commits, else it is a noop :-(
+  #pad2 "Start a Jenkins build using a web hook"
+  #local webhook="https://${host}/git/notifyCommit?url=${giturl}"
+  #if ocp4_check_http_status 200 "${webhook}"
+  #then
+  #  print_PASS
+
+  local file='/home/student/jenkins-api-token.txt'
+  local token=$( cat "${file}" )
+  pad2 "File '${file}' exist and is not empty"
+  if [ -r "${file}" -a -n "${token}" ]
+  then
+    print_PASS
+
+    local proj="https://${host}/job/apply/api/json"
+    local auth="--user admin-admin-edit-view:${token}"
+    local class=$( curl -sk "${proj}" ${auth} | jq -r '._class')
+    pad2 "Token can access project 'master'"
+    if [ -n "${class}" ]
+    then
+      print_PASS
+
+      pad2 "Project 'master' is a multibranch pipeline"
+      if [ "${class}" = 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject' ]
+      then
+        print_PASS
+
+        do380_samples_co_defaults_grading
+
+        pad2 "Start a new Jenkins build"
+        local job="https://${host}/job/apply/job/master"
+        local code=$( curl -sSk -w '%{response_code}' -X POST "${job}/build" ${auth} )
+        if [ "201" = "${code}" ]
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+
+        #XXX Using the Jenkins API or CLI to follow the build is taking too long to code. Maybe for the next course update.
+        pad2 "Wait until templates for Ruby on Rails are gone"
+        timeout 9m bash -c "until ! oc get templates -n openshift -o name | grep -q rails ; do sleep 5 ; done" &
+        local pid="$!"
+        spinner "${pid}"
+        if wait "${pid}"
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+
+        local number=$( curl -sk "${job}/lastBuild/api/json" ${auth} | jq -r '.number' )
+        local result=$( curl -sk "${job}/lastBuild/api/json" ${auth} | jq -r '.result' )
+        pad2 "Latest Jenkins build (#${number}) was successful"
+        if [ "SUCCESS" = "${result}" ]
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+
+        pad2 "Templates for Ruby on Rails are not back"
+        sleep 5
+        if ! oc get templates -n openshift -o name | grep rails
+        then
+          print_PASS
+        else
+          print_FAIL
+        fi
+
+      else
+        print_FAIL
+      fi
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  #XXX Not sure I wanna perform that: cleanup and running the playbook to make sure students do not "cheat"
+  #XXX That wold be a lot of work and potentially slow. Let's save a few min from this lab.
+  #print_line
+  #print_line 'Running your playbook:'
+  #pad2 'Not fully implemented yet'
+  #print_FAIL
+
+  ocp4_print_grade_footer
+}
+
+
+function do380_samples_co_defaults {
+  skipped=$( oc get config.samples cluster -o jsonpath='{.spec.skippedTemplates[*]}' )
+  if [ -n "${skipped}" ]
+  then
+    pad2 "Restore default config of the Samples operator"
+    if oc apply -k "${labs}/${this}/default"
+    then
+      print_SUCCESS
+      sleep 3
+    else
+      print_FAIL
+    fi
+  fi
+  pad2 "Restore templates for Ruby on Rails"
+  if oc get templates -n openshift -o name | grep rails
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function do380_samples_co_defaults_grading {
+  skipped=$( oc get config.samples cluster -o jsonpath='{.spec.skippedTemplates[*]}' )
+  if [ -n "${skipped}" ]
+  then
+    pad2 "Restore default config of the Samples operator"
+    if oc apply -k "${labs}/${this}/default"
+    then
+      print_PASS
+      sleep 3
+    else
+      print_FAIL
+    fi
+  fi
+  pad2 "Restore templates for Ruby on Rails"
+  if oc get templates -n openshift -o name | grep rails
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

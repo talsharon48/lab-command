@@ -1,0 +1,172 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-monitor-alerts - lab script for DO380-OCP4
+#
+# SYNOPSIS
+#     lab-monitor-alerts {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Wed Jul 29 Michael Phillips <miphilli@redhat.com>
+#   - added the ocp4_login_as_admin function after the ocp4_is_cluster_up function
+#   * Thu Jun 25 Michael Phillips <miphilli@redhat.com>
+#   - added steps to clear /home/lab/Mail if the lab is started again
+#   * Tue Jun 15 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='monitor-alerts'
+title='Guided Exercise: Managing OpenShift Alerts'
+playbook_dir="/usr/local/lib/ansible"
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+source /etc/rht
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_login_as_admin
+  print_line
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+  deploy_ansible
+
+  pad2 "Ensure the test alert exists"
+  playbook="${playbook_dir}/monitor/create_alert.yml"
+  if ansible-playbook "${playbook}" -e k8s_state=present
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+
+  pad2 "Configuring 'utility' to accept mail from OCP nodes"
+  if ansible-playbook ${playbook_dir}/monitor/configure-mail.yml --tags start
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    # Uncomment the show_ansible line if you would like a message to be displayed
+    # if the playbook fails. This is especially useful during lab development.
+    show_ansible "${playbook_dir}/monitor/configure-mail.yml" "--tags start"
+  fi
+
+  if ! [ -d /tmp/monitor ]
+  then
+    mkdir /tmp/monitor
+  fi
+
+  if oc get secret/alertmanager-main -n openshift-monitoring
+  then
+    oc extract secret/alertmanager-main -n openshift-monitoring --to=/tmp/monitor/ --confirm
+    if ! diff -iB /tmp/monitor/alertmanager.yaml /home/student/${RHT_COURSE^^}/solutions/${this}/alertmanager.yaml-orig
+    then
+      pad2 "Reverting Alertmanager to the default configuration"
+      if oc create secret generic alertmanager-main --from-file=alertmanager.yaml=/home/student/${RHT_COURSE^^}/solutions/${this}/alertmanager.yaml-orig -n openshift-monitoring -o yaml --dry-run | oc replace -f -
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+      if ssh lab@utility ls -d /home/lab/Mail
+      then
+        pad2 "Removing '/home/lab/Mail' from 'utility'"
+        if ssh lab@utility rm -rf /home/lab/Mail
+        then
+          print_SUCCESS
+        else
+          print_FAIL
+        fi
+      fi
+    fi
+  fi
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_cleanup_lab_files
+
+  pad2 "Remove temporary GE files"
+  if ls /tmp/alertmanager.yaml
+  then
+    if rm -f /tmp/alertmanager.yaml
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+      print_line "   Unable to remove temporary file /tmp/alertmanager.yaml"
+    fi
+  else
+    print_SUCCESS
+  fi
+
+  pad2 "Ensure the test alert is absent"
+  playbook="${playbook_dir}/monitor/create_alert.yml"
+  if ansible-playbook "${playbook}" -e k8s_state=absent
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    show_ansible "${playbook_args}"
+  fi
+
+  pad2 "Ensure the alert silence is removed"
+  token=$(oc whoami -t)
+
+  silence_id=$(curl -sk --header "Authorization: Bearer $token" \
+https://alertmanager-main-openshift-monitoring.apps.ocp4.example.com/api/v1/silences | \
+jq -re '.data[] | select(.status.state | contains("active")) |
+{"id":.id, "matchers": .matchers | map({(.name|tostring):(.value|tostring)}) | add,
+"status":.status.state} | select(.matchers.alertname | contains("TestAlert")) | .id')
+
+  res=$(curl -sk --header "Authorization: Bearer $token" -X DELETE \
+https://alertmanager-main-openshift-monitoring.apps.ocp4.example.com/api/v1/silence/$silence_id | \
+jq -re '.status')
+
+  if [[ $res == 'success' || -z $silence_id ]]
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"
